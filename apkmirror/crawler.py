@@ -13,6 +13,7 @@ import datetime
 import json
 import pandas as pd
 import random
+import sys
 
 base_URL = "https://www.apkmirror.com/"
 search_URL = "?post_type=app_release&searchtype=apk&s="
@@ -71,6 +72,7 @@ def give_apkURL(apk_name, proxylist):
 	# print(proxies)
 
 	# scraper = cfscrape.create_scraper()
+	# print(base_URL+search_URL+apk_name, 'https://www.apkmirror.com/?post_type=app_release&searchtype=apk&s=com.ftt.gbworld.aos')
 	r = requests.get(base_URL+search_URL+apk_name, proxies= proxies, timeout = 60)
 	soup = bs(r.text, 'html.parser')
 	for data in soup.find_all('div', id='content', class_='col-md-8 content-area search-area', role = 'main'):
@@ -257,11 +259,11 @@ def get_apk_version_info(links, appversion, appID, proxylist):
 		apk_verion_list.append(apkDetail)
 
 	try:
+		os.makedirs(os.path.dirname('apk_files/'+appID + '/'+ appversion.replace(' ','_') + '.json'))	
 		with open('apk_files/'+appID + '/'+ appversion.replace(' ','_') + '.json', 'w') as outfile:
 			json.dump({'apkvariants': apk_verion_list, 'appID':appID, 'appVersion':appversion}, outfile)
 	
 	except :
-		os.makedirs(os.path.dirname('apk_files/'+appID + '/'+ appversion.replace(' ','_') + '.json'))	
 		with open('apk_files/'+appID + '/'+ appversion.replace(' ','_') + '.json', 'w') as outfile:
 			json.dump({'apkvariants': apk_verion_list, 'appID':appID, 'appVersion':appversion}, outfile)
 
@@ -271,45 +273,83 @@ def get_apk_version_info(links, appversion, appID, proxylist):
 
 # END OF FUNCTIONS, MAIN CODE BELOW THIS LINE
 
+# Starting from here
+
+def getLinks(url, proxylist):
+	links = []
+	post_url = None
+	while True:
+		random.shuffle(proxylist)
+		proxy = proxylist[0]
+
+		proxies = None
+		if ( proxy[3] in "yes"):
+			proxies = {"http": "{0}://{1}:{2}".format("http", proxy[0], proxy[1])}
+
+		elif(proxy[2] in "yes"):
+			proxies = {"https": "{0}://{1}:{2}".format("https", proxy[0], proxy[1])}
+
+		# url = base_URL + post_url[1:]
+		scraper = cfscrape.create_scraper()
+		print('url: {}'.format(url))
+		req = scraper.get(url)
+		# print(req.content)
+		# break
+		soup = bs(req.content, 'html.parser')
+		data = soup.find('div', id='content', class_='col-md-8 content-area search-area', role = 'main')
+		# print(data)
+		data = data.find_all('div', class_='appRow')
+		for div in  data:
+			for div2 in div.find_all('div', class_='downloadIconPositioning'):	
+				a = div2.find('a')
+
+				appTitle = div.find('h5', class_="appRowTitle wrapText marginZero block-on-mobile").text.lower()
+				alphaBetaCheck = 'alpha' in appTitle  or 'beta' in appTitle 
+
+
+				if not alphaBetaCheck:
+					links.append(base_URL + a.get('href')[1:])
+
+			
+		next_div = soup.find('div', class_='pagination desktop')
+		url_div = next_div.find('a')
+		
+		if 'next' not in url_div.text.lower():
+			break
+
+		url = base_URL + url_div.get('href')
+		
+	return links
 
 
 def process_batch(appIds, proxies):
 
-	for appId in appIds:
+	for appId in appIds[:1]:
 		print("Starting ", appId)
 
-		apk_url = give_apkURL(appId, proxies)
-		print("APK url is: ", apk_url)
+		apk_url = base_URL+search_URL+appId
 
-		if apk_url == None:
-			continue
 
-		see_more = give_VersionsPageLinks(apk_url, proxies)
-		if see_more == "":
-			continue
-
-		versioned_app_links = get_version_apk_link(see_more, proxies)
-		if versioned_app_links == "error while scraping":
-			continue
-
+		links = getLinks(apk_url, proxies)
+		# print(links)
+		# print(len(links))
+		# return
 		try:
 			os.mkdir('apk_files/'+appId+'/')
 		except:
 			pass
 
-		for url in versioned_app_links:
-			print("url: " , url)
+		for url in links:
+			print("app:{} , url: {}".format(appId, url))
 			appversion, downloadPageLinks = get_download_page_links(url, proxies)
 
 			if(appversion == "NULL" or downloadPageLinks == "NULL"):
-				pass
+				print('passing')
 			else:
 				get_apk_version_info(downloadPageLinks, appversion, appId, proxies)
 
-		with open('newLOG.csv', 'a') as csvFile:
-			writer = csv.writer(csvFile)
-			writer.writerow([appId])
-
+		with open('log', 'a') as f:
+			f.write(appId + '\n')
 		print("Done ", appId)
 
 
@@ -351,4 +391,5 @@ def main():
 		for t in threads:
 			t.join()
 			print("thread joined!")
+		break
 main()
