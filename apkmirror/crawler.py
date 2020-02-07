@@ -14,6 +14,7 @@ import json
 import pandas as pd
 import random
 import sys
+import re
 
 base_URL = "https://www.apkmirror.com/"
 search_URL = "?post_type=app_release&searchtype=apk&s="
@@ -285,24 +286,23 @@ def downloading_meta_info(appId, url):
 	dp_url_divs = data.find_all('div', class_='table-cell rowheight addseparator expand pad dowrap')
 	url_div = dp_url_divs[0].find('a')
 	nextpage_url = base_URL + url_div.get('href')[1:]
-	appversion = soup.find('h1', class_="marginZero wrapText app-title fontBlack noHover").text.lower
+	appversion = soup.find('h1', class_="marginZero wrapText app-title fontBlack noHover").text.lower()
 
-	print(nextpage_url)
+	# print(nextpage_url)
 
 	resp = scraper.get(nextpage_url)
 	soup = bs(resp.content, 'html.parser')
 	data = soup.find('div', class_= 'noPadding col-md-6 col-sm-6 col-xs-12')
 	apkDetailsTable = data.find('div', class_='apk-detail-table')
-	# downloadLink = base_URL +  data.find('a', class_="btn btn-flat downloadButton").get('href')[1:]
-
+	
 	rows =  apkDetailsTable.find_all('div', class_='appspec-row')
 	apkDetail = {}
-	# apkDetail['download-link'] = downloadLink
-	apkDetail['version-detail'] = appversion
-	apkDetail['size'] = rows[1].text
-	apkDetail['os-detail'] = rows[2].text
-	apkDetail['screen-detail'] = rows[3].text
-	apkDetail['date-published'] = rows[len(rows)-1].text
+	apkDetail['version'] = appversion
+	size = rows[1].text
+	apkDetail['size'] = int(re.sub(r"\D", "", size.replace('\n', '').split('(')[1]))
+	apkDetail['os_detail'] = rows[2].text.replace('\n', '')
+	apkDetail['screen_detail'] = rows[3].text.replace('\n', '')
+	apkDetail['date_published'] = rows[len(rows)-1].text.replace('\n', '')
 	return apkDetail
 
 	# apk_verion_list.append(apkDetail)
@@ -363,13 +363,7 @@ def process_batch(appIds, proxies):
 		print("Starting ", appId)
 
 		apk_url = base_URL+search_URL+appId
-
-
 		links = getLinks(apk_url, proxies)
-		try:
-			os.mkdir('apk_files/'+appId+'/')
-		except:
-			pass
 
 		if len(links) == 0:
 			with open('notFound', 'a') as f:
@@ -379,18 +373,11 @@ def process_batch(appIds, proxies):
 		for url in links:
 			# print("app:{} , url: {}".format(appId, url))
 			apkDetail = downloading_meta_info(appId, url)
-			lst_apk_details.append(apkDetail)
+			lst_apk_details.append(list(apkDetail.values()))
 
-		try:
-			os.makedirs(os.path.dirname('apk_files/'+appId + '/'))	
-			with open('apk_files/'+appId + '.json', 'w') as outfile:
-				json.dump({'apk_details': lst_apk_details, 'appID':appId,}, outfile)
-	
-		except :
-			with open('apk_files/'+appId + '.json', 'w') as outfile:
-				json.dump({'apk_details': lst_apk_details, 'appID':appId,}, outfile)
-
-
+		df = pd.DataFrame(lst_apk_details, columns = ['version', 'size', 'os_detail', 'screen_detail', 'date_published'])
+		df.to_csv('apk_files/{}.csv'.format(appId), index=False)
+		
 		with open('log', 'a') as f:
 			f.write(appId + '\n')
 		print("Done ", appId)
