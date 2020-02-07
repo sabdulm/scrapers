@@ -218,8 +218,7 @@ def get_download_page_links(url, proxylist):
 		apkTableLinks = data.find('div', class_='table topmargin variants-table').find_all('a')
 		downloadlinks = [base_URL + link.get('href')[1:] for link in apkTableLinks]
 	
-		appversion = soup.find('h1', class_="marginZero wrapText app-title fontBlack noHover").text
-
+		
 	
 		return appversion, downloadlinks
 	except:
@@ -275,9 +274,44 @@ def get_apk_version_info(links, appversion, appID, proxylist):
 
 # Starting from here
 
+
+def downloading_meta_info(appId, url):
+	print(appId, url)
+	scraper = cfscrape.create_scraper()
+	resp = scraper.get(url)
+	soup = bs(resp.content, 'html.parser')
+
+	data = soup.find('div', class_ = 'table topmargin variants-table')
+	dp_url_divs = data.find_all('div', class_='table-cell rowheight addseparator expand pad dowrap')
+	url_div = dp_url_divs[0].find('a')
+	nextpage_url = base_URL + url_div.get('href')[1:]
+	appversion = soup.find('h1', class_="marginZero wrapText app-title fontBlack noHover").text.lower
+
+	print(nextpage_url)
+
+	resp = scraper.get(nextpage_url)
+	soup = bs(resp.content, 'html.parser')
+	data = soup.find('div', class_= 'noPadding col-md-6 col-sm-6 col-xs-12')
+	apkDetailsTable = data.find('div', class_='apk-detail-table')
+	# downloadLink = base_URL +  data.find('a', class_="btn btn-flat downloadButton").get('href')[1:]
+
+	rows =  apkDetailsTable.find_all('div', class_='appspec-row')
+	apkDetail = {}
+	# apkDetail['download-link'] = downloadLink
+	apkDetail['version-detail'] = appversion
+	apkDetail['size'] = rows[1].text
+	apkDetail['os-detail'] = rows[2].text
+	apkDetail['screen-detail'] = rows[3].text
+	apkDetail['date-published'] = rows[len(rows)-1].text
+	return apkDetail
+
+	# apk_verion_list.append(apkDetail)
+
+
+
+
 def getLinks(url, proxylist):
 	links = []
-	post_url = None
 	while True:
 		random.shuffle(proxylist)
 		proxy = proxylist[0]
@@ -289,6 +323,7 @@ def getLinks(url, proxylist):
 		elif(proxy[2] in "yes"):
 			proxies = {"https": "{0}://{1}:{2}".format("https", proxy[0], proxy[1])}
 
+		_ = proxies
 		# url = base_URL + post_url[1:]
 		scraper = cfscrape.create_scraper()
 		print('url: {}'.format(url))
@@ -331,22 +366,30 @@ def process_batch(appIds, proxies):
 
 
 		links = getLinks(apk_url, proxies)
-		# print(links)
-		# print(len(links))
-		# return
 		try:
 			os.mkdir('apk_files/'+appId+'/')
 		except:
 			pass
 
+		if len(links) == 0:
+			with open('notFound', 'a') as f:
+				f.write(appId + '\n')
+			continue
+		lst_apk_details = []
 		for url in links:
-			print("app:{} , url: {}".format(appId, url))
-			appversion, downloadPageLinks = get_download_page_links(url, proxies)
+			# print("app:{} , url: {}".format(appId, url))
+			apkDetail = downloading_meta_info(appId, url)
+			lst_apk_details.append(apkDetail)
 
-			if(appversion == "NULL" or downloadPageLinks == "NULL"):
-				print('passing')
-			else:
-				get_apk_version_info(downloadPageLinks, appversion, appId, proxies)
+		try:
+			os.makedirs(os.path.dirname('apk_files/'+appId + '/'))	
+			with open('apk_files/'+appId + '.json', 'w') as outfile:
+				json.dump({'apk_details': lst_apk_details, 'appID':appId,}, outfile)
+	
+		except :
+			with open('apk_files/'+appId + '.json', 'w') as outfile:
+				json.dump({'apk_details': lst_apk_details, 'appID':appId,}, outfile)
+
 
 		with open('log', 'a') as f:
 			f.write(appId + '\n')
